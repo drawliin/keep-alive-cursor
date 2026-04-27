@@ -14,7 +14,7 @@ When started, the script opens a black fullscreen window. While that window is a
 3. Waits 0.5 seconds
 4. Moves the cursor back to its original position
 
-Press any key on the keyboard to close the fullscreen overlay and stop the script.
+Press one of the configured keyboard buttons to close the fullscreen overlay and stop the script.
 
 ## Requirements
 
@@ -23,19 +23,15 @@ Press any key on the keyboard to close the fullscreen overlay and stop the scrip
 
 Windows support uses Tkinter for the fullscreen overlay. Most Python for Windows installers include it.
 
-Install dependencies with:
-
-```bash
-pip install -r requirements.txt
-```
-
 ## Usage
 
 Run the script with:
 
 ```bash
-python script.py
+./run.sh
 ```
+
+The runner creates a local virtual environment, installs dependencies, and starts the script.
 
 ## Platform Notes
 
@@ -57,12 +53,23 @@ The script uses the Windows `user32` API through `ctypes`, so no extra Windows-s
 
 ## Configuration
 
-The behavior is controlled by these constants in [`script.py`](/home/hhamouich/Desktop/keep-alive-cursor/script.py):
+The movement behavior is controlled by these constants in [`script.py`](/home/hhamouich/Desktop/keep-alive-cursor/script.py):
 
 - `INTERVAL = 5` sets the wait time between cursor nudges
 - `OFFSET = 1` sets how far the cursor moves
 
-You can edit those values to make the movement more or less frequent.
+The fullscreen exit buttons are controlled in [`config.env`](/home/hhamouich/Desktop/keep-alive-cursor/config.env):
+
+```env
+EXIT_KEY_COMBINATIONS=spacebar+h
+```
+
+Use one key by writing the key name, like `Escape` or `F12`.
+Use a key combo with `+`, like `Control+q` or `Control+Shift+q`.
+Use `spacebar` for the space key.
+Allow multiple exit options by separating them with commas.
+
+In the current config, hold `Spacebar` and press `h` to exit.
 
 ## Limitations
 
@@ -72,4 +79,4 @@ You can edit those values to make the movement more or less frequent.
 
 ## Stopping the Script
 
-Press any key while the black fullscreen overlay is focused. You can also press `Ctrl+C` in the terminal to stop it.
+Press one of the configured exit buttons while the black fullscreen overlay is focused. You can also press `Ctrl+C` in the terminal to stop it.
