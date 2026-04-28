@@ -1,6 +1,6 @@
 # Keep Alive Cursor
 
-A small Python script that keeps your system from appearing idle by moving the mouse cursor by 1 pixel and then moving it back while a black fullscreen overlay is shown.
+A small Python app that keeps your system from appearing idle by moving the mouse cursor by 1 pixel and then moving it back while a black fullscreen overlay is shown.
 
 It currently supports:
 - Linux sessions running on X11
@@ -22,6 +22,7 @@ Press one of the configured keyboard buttons to close the fullscreen overlay and
 - Dependencies from `requirements.txt`
 
 Windows support uses Tkinter for the fullscreen overlay. Most Python for Windows installers include it.
+TOML configuration uses Python's built-in parser on Python 3.11+ and `tomli` on older versions.
 
 ## Usage
 
@@ -53,30 +54,45 @@ The script uses the Windows `user32` API through `ctypes`, so no extra Windows-s
 
 ## Configuration
 
-The movement behavior is controlled by these constants in [`script.py`](/home/hhamouich/Desktop/keep-alive-cursor/script.py):
+The fullscreen exit buttons, automatic timeout, and movement behavior are controlled in [`config.toml`](/home/hhamouich/Desktop/keep-alive-cursor/config.toml):
 
-- `INTERVAL = 5` sets the wait time between cursor nudges
-- `OFFSET = 1` sets how far the cursor moves
+```toml
+exit_key_combinations = ["spacebar+d"]
+timeout_seconds = 0
 
-The fullscreen exit buttons are controlled in [`config.env`](/home/hhamouich/Desktop/keep-alive-cursor/config.env):
-
-```env
-EXIT_KEY_COMBINATIONS=spacebar+h
+[movement]
+interval_seconds = 5
+offset_pixels = 1
+move_back_delay_seconds = 0.5
 ```
 
 Use one key by writing the key name, like `Escape` or `F12`.
 Use a key combo with `+`, like `Control+q` or `Control+Shift+q`.
 Use `spacebar` for the space key.
-Allow multiple exit options by separating them with commas.
+Allow multiple exit options by adding more strings to the array.
+Set `timeout_seconds` to the number of seconds the script should run before stopping itself.
+Set `timeout_seconds = 0` to run until you stop it manually.
+Set `movement.interval_seconds` to the wait time between cursor nudges; it must be greater than `0`.
+Set `movement.offset_pixels` to how far the cursor moves.
+Set `movement.move_back_delay_seconds` to how long the cursor stays offset before moving back.
 
-In the current config, hold `Spacebar` and press `h` to exit.
+In the current config, hold `Spacebar` and press `d` to exit.
+
+## Code Layout
+
+- [`script.py`](/home/hhamouich/Desktop/keep-alive-cursor/script.py) is a compatibility entrypoint.
+- [`keep_alive_cursor/app.py`](/home/hhamouich/Desktop/keep-alive-cursor/keep_alive_cursor/app.py) coordinates settings, timers, overlay, and mouse movement.
+- [`keep_alive_cursor/config.py`](/home/hhamouich/Desktop/keep-alive-cursor/keep_alive_cursor/config.py) loads and validates TOML settings.
+- [`keep_alive_cursor/keys.py`](/home/hhamouich/Desktop/keep-alive-cursor/keep_alive_cursor/keys.py) normalizes exit keys and key combinations.
+- [`keep_alive_cursor/mouse.py`](/home/hhamouich/Desktop/keep-alive-cursor/keep_alive_cursor/mouse.py) contains platform mouse controllers.
+- [`keep_alive_cursor/overlays.py`](/home/hhamouich/Desktop/keep-alive-cursor/keep_alive_cursor/overlays.py) contains fullscreen overlay implementations.
 
 ## Limitations
 
 - It does not support Wayland sessions on Linux
-- It runs continuously until you stop it manually
+- It runs continuously until you stop it manually when `timeout_seconds` is `0`
 - It physically moves the mouse cursor, which may interfere if you are actively using it at the same time
 
 ## Stopping the Script
 
-Press one of the configured exit buttons while the black fullscreen overlay is focused. You can also press `Ctrl+C` in the terminal to stop it.
+Press one of the configured exit buttons while the black fullscreen overlay is focused. You can also press `Ctrl+C` in the terminal to stop it, or set `timeout_seconds` to stop it automatically.

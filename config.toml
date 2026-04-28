@@ -1,0 +1,19 @@
+# One key: "Escape"
+# Key combo: "Control+q"
+# Space key: "spacebar"
+# Multiple ways to exit: add more strings to the array.
+exit_key_combinations = ["spacebar+d"]
+
+# Seconds before the script stops automatically.
+# Set to 0 to run until stopped manually.
+timeout_seconds = 0
+
+[movement]
+# Seconds between cursor nudges.
+interval_seconds = 30
+
+# Pixels to move the cursor before moving it back.
+offset_pixels = 1
+
+# Seconds to wait before returning the cursor to its original position.
+move_back_delay_seconds = 0.5
