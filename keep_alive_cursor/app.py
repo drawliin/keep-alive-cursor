@@ -50,7 +50,7 @@ def run(settings: AppSettings) -> int:
     stop_event = threading.Event()
     overlay = create_blackout_overlay(
         stop_event,
-        settings.exit_key_combinations,
+        settings.exit_password,
     )
 
     if overlay is None:

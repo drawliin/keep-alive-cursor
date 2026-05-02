@@ -1,8 +1,5 @@
-# One key: "Escape"
-# Key combo: "Control+q"
-# Space key: "spacebar"
-# Multiple ways to exit: add more strings to the array.
-exit_key_combinations = ["spacebar+d"]
+# Type this password into the fullscreen prompt and press Enter to stop.
+exit_password = "Science"
 
 # Seconds before the script stops automatically.
 # Set to 0 to run until stopped manually.

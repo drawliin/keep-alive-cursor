@@ -5,16 +5,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .keys import ExitKeyCombinations
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = PROJECT_ROOT / "config.toml"
 
-DEFAULT_EXIT_KEY_COMBINATIONS: ExitKeyCombinations = (
-    "Escape",
-    ("Control", "q"),
-)
+DEFAULT_EXIT_PASSWORD = "keepalive"
 DEFAULT_TIMEOUT_SECONDS = 0.0
 DEFAULT_INTERVAL_SECONDS = 5.0
 DEFAULT_OFFSET_PIXELS = 1
@@ -30,7 +25,7 @@ class MovementSettings:
 
 @dataclass(frozen=True)
 class AppSettings:
-    exit_key_combinations: ExitKeyCombinations = DEFAULT_EXIT_KEY_COMBINATIONS
+    exit_password: str = DEFAULT_EXIT_PASSWORD
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     movement: MovementSettings = field(default_factory=MovementSettings)
 
@@ -60,55 +55,20 @@ def load_toml_config(path: Path = CONFIG_FILE) -> dict[str, Any]:
         return tomllib.load(config_file)
 
 
-def parse_key_combination(raw_combination: Any) -> tuple[str, ...]:
-    if isinstance(raw_combination, str):
-        raw_keys = raw_combination.split("+")
-    elif isinstance(raw_combination, (list, tuple)):
-        raw_keys = raw_combination
-    else:
-        raise ValueError("exit_key_combinations entries must be strings")
+def parse_exit_password(value: Any) -> str:
+    if value is None:
+        return DEFAULT_EXIT_PASSWORD
 
-    keys = []
+    if not isinstance(value, str):
+        raise ValueError("exit_password must be a string")
 
-    for raw_key in raw_keys:
-        if not isinstance(raw_key, str):
-            raise ValueError("exit key names must be strings")
+    if value == "":
+        raise ValueError("exit_password cannot be empty")
 
-        key = raw_key.strip()
+    if any(not character.isprintable() for character in value):
+        raise ValueError("exit_password must contain only printable characters")
 
-        if key:
-            keys.append(key)
-
-    return tuple(keys)
-
-
-def parse_exit_key_combinations(value: Any) -> ExitKeyCombinations:
-    combinations = []
-
-    if isinstance(value, str):
-        raw_combinations = value.split(",")
-    elif isinstance(value, (list, tuple)):
-        raw_combinations = value
-    else:
-        raise ValueError(
-            "exit_key_combinations must be a string or an array of strings"
-        )
-
-    for raw_combination in raw_combinations:
-        keys = parse_key_combination(raw_combination)
-
-        if not keys:
-            continue
-
-        if len(keys) == 1:
-            combinations.append(keys[0])
-        else:
-            combinations.append(keys)
-
-    if not combinations:
-        raise ValueError("exit_key_combinations must contain at least one key")
-
-    return tuple(combinations)
+    return value
 
 
 def parse_finite_seconds(value: Any, name: str, default: float) -> float:
@@ -179,15 +139,9 @@ def parse_movement_settings(config: dict[str, Any]) -> MovementSettings:
 
 def load_settings(path: Path = CONFIG_FILE) -> AppSettings:
     config = load_toml_config(path)
-    raw_combinations = config.get("exit_key_combinations")
-
-    if raw_combinations is None:
-        exit_key_combinations = DEFAULT_EXIT_KEY_COMBINATIONS
-    else:
-        exit_key_combinations = parse_exit_key_combinations(raw_combinations)
 
     return AppSettings(
-        exit_key_combinations=exit_key_combinations,
+        exit_password=parse_exit_password(config.get("exit_password")),
         timeout_seconds=parse_timeout_seconds(config.get("timeout_seconds")),
         movement=parse_movement_settings(config),
     )

@@ -6,7 +6,13 @@ import threading
 import time
 from typing import Protocol
 
-from .keys import ExitKeyCombinations, ExitKeyMatcher
+from .password import ExitPasswordMatcher
+
+
+PROMPT_TITLE = "Enter password"
+PROMPT_HINT = "Press Enter to unlock"
+PROMPT_ERROR = "Incorrect password"
+X11_CHARACTER_WIDTH = 8
 
 
 class BlackoutOverlay(Protocol):
@@ -54,21 +60,16 @@ class LinuxX11BlackoutOverlay:
     def __init__(
         self,
         stop_event: threading.Event,
-        exit_key_combinations: ExitKeyCombinations,
+        exit_password: str,
     ):
         from Xlib import X, XK, display
 
         self.X = X
         self.XK = XK
         self.keysym_names = build_x11_keysym_names(XK)
-        self.modifier_masks = (
-            (X.ShiftMask, "Shift"),
-            (X.ControlMask, "Control"),
-            (X.Mod1Mask, "Alt"),
-            (X.Mod4Mask, "Super"),
-        )
+        self.non_text_modifier_mask = X.ControlMask | X.Mod1Mask | X.Mod4Mask
         self.stop_event = stop_event
-        self.exit_keys = ExitKeyMatcher(exit_key_combinations)
+        self.exit_password = ExitPasswordMatcher(exit_password)
         self.display = display.Display()
         self.screen = self.display.screen()
         self.window = self.screen.root.create_window(
@@ -81,14 +82,20 @@ class LinuxX11BlackoutOverlay:
             X.InputOutput,
             X.CopyFromParent,
             background_pixel=self.screen.black_pixel,
-            event_mask=X.KeyPressMask | X.KeyReleaseMask,
+            event_mask=X.KeyPressMask | X.ExposureMask,
             override_redirect=True,
+        )
+        self.text_gc = self.window.create_gc(
+            foreground=self.screen.white_pixel,
+            background=self.screen.black_pixel,
+            line_width=2,
         )
 
     def run(self) -> None:
         self.window.map()
         self.display.sync()
         self.focus()
+        self.draw_prompt()
 
         try:
             next_focus = 0
@@ -97,12 +104,15 @@ class LinuxX11BlackoutOverlay:
                 while self.display.pending_events():
                     event = self.display.next_event()
 
-                    if event.type == self.X.KeyPress and self.key_pressed(event):
-                        self.stop_event.set()
-                        return
+                    if event.type == self.X.Expose:
+                        self.draw_prompt()
 
-                    if event.type == self.X.KeyRelease:
-                        self.key_released(event)
+                    if event.type == self.X.KeyPress:
+                        if self.key_pressed(event):
+                            self.stop_event.set()
+                            return
+
+                        self.draw_prompt()
 
                 now = time.monotonic()
 
@@ -137,29 +147,71 @@ class LinuxX11BlackoutOverlay:
 
         return self.XK.keysym_to_string(keysym)
 
-    def get_modifier_names(self, event) -> list[str]:
-        return [
-            key_name
-            for mask, key_name in self.modifier_masks
-            if event.state & mask
-        ]
+    def get_key_character(self, event) -> str | None:
+        if event.state & self.non_text_modifier_mask:
+            return None
+
+        index = 1 if event.state & self.X.ShiftMask else 0
+        keysym = self.display.keycode_to_keysym(event.detail, index)
+        character = self.display.lookup_string(keysym)
+
+        if (
+            character is None
+            or len(character) != 1
+            or not character.isprintable()
+        ):
+            return None
+
+        if event.state & self.X.LockMask and character.isalpha():
+            return character.swapcase()
+
+        return character
 
     def key_pressed(self, event) -> bool:
         key_name = self.get_key_name(event)
+        character = self.get_key_character(event)
+        return self.exit_password.press(key_name, character)
 
-        for modifier_name in self.get_modifier_names(event):
-            self.exit_keys.press(modifier_name)
+    def draw_prompt(self) -> None:
+        width = self.screen.width_in_pixels
+        height = self.screen.height_in_pixels
+        field_width = min(480, max(280, width // 3))
+        field_height = 56
+        field_x = (width - field_width) // 2
+        field_y = max(96, height // 2 - 28)
 
-        if key_name is None:
-            return False
+        self.window.clear_area()
+        self.draw_centered_text(PROMPT_TITLE, field_y - 36)
+        self.window.rectangle(
+            self.text_gc,
+            field_x,
+            field_y,
+            field_width,
+            field_height,
+        )
 
-        return self.exit_keys.press(key_name)
+        masked_password = self.visible_masked_password(field_width - 36)
+        self.window.image_text(
+            self.text_gc,
+            field_x + 18,
+            field_y + 36,
+            masked_password,
+        )
+        self.draw_centered_text(PROMPT_HINT, field_y + field_height + 34)
 
-    def key_released(self, event) -> None:
-        key_name = self.get_key_name(event)
+        if self.exit_password.failed:
+            self.draw_centered_text(PROMPT_ERROR, field_y + field_height + 62)
 
-        if key_name is not None:
-            self.exit_keys.release(key_name)
+        self.display.flush()
+
+    def draw_centered_text(self, text: str, y: int) -> None:
+        text_width = len(text) * X11_CHARACTER_WIDTH
+        x = max(0, (self.screen.width_in_pixels - text_width) // 2)
+        self.window.image_text(self.text_gc, x, y, text)
+
+    def visible_masked_password(self, max_width: int) -> str:
+        max_characters = max(1, max_width // X11_CHARACTER_WIDTH)
+        return self.exit_password.masked_buffer[-max_characters:]
 
     def close(self) -> None:
         try:
@@ -174,22 +226,66 @@ class TkBlackoutOverlay:
     def __init__(
         self,
         stop_event: threading.Event,
-        exit_key_combinations: ExitKeyCombinations,
+        exit_password: str,
     ):
         import tkinter as tk
 
         self.stop_event = stop_event
-        self.exit_keys = ExitKeyMatcher(exit_key_combinations)
+        self.exit_password = ExitPasswordMatcher(exit_password)
         self.closed = False
         self.root = tk.Tk()
         self.root.configure(background="black", cursor="none")
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
         self.root.bind("<KeyPress>", self.key_pressed)
-        self.root.bind("<KeyRelease>", self.key_released)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(100, self.focus)
         self.root.after(100, self.watch_stop_event)
+        self.password_text = tk.StringVar()
+        self.status_text = tk.StringVar()
+
+        container = tk.Frame(self.root, background="black")
+        container.place(relx=0.5, rely=0.5, anchor="center")
+
+        tk.Label(
+            container,
+            text=PROMPT_TITLE,
+            background="black",
+            foreground="white",
+            font=("Segoe UI", 28, "bold"),
+        ).pack(pady=(0, 18))
+
+        tk.Label(
+            container,
+            textvariable=self.password_text,
+            anchor="w",
+            background="black",
+            foreground="white",
+            font=("Segoe UI", 22),
+            width=28,
+            padx=18,
+            pady=12,
+            highlightbackground="white",
+            highlightcolor="white",
+            highlightthickness=2,
+        ).pack()
+
+        tk.Label(
+            container,
+            text=PROMPT_HINT,
+            background="black",
+            foreground="white",
+            font=("Segoe UI", 12),
+        ).pack(pady=(18, 0))
+
+        tk.Label(
+            container,
+            textvariable=self.status_text,
+            background="black",
+            foreground="white",
+            font=("Segoe UI", 12),
+        ).pack(pady=(8, 0))
+        self.update_prompt()
 
     def focus(self) -> None:
         if self.stop_event.is_set():
@@ -218,11 +314,15 @@ class TkBlackoutOverlay:
         self.root.destroy()
 
     def key_pressed(self, event) -> None:
-        if self.exit_keys.press(event.keysym):
+        if self.exit_password.press(event.keysym, event.char):
             self.close()
+            return
 
-    def key_released(self, event) -> None:
-        self.exit_keys.release(event.keysym)
+        self.update_prompt()
+
+    def update_prompt(self) -> None:
+        self.password_text.set(self.exit_password.masked_buffer)
+        self.status_text.set(PROMPT_ERROR if self.exit_password.failed else "")
 
     def run(self) -> None:
         self.root.mainloop()
@@ -230,7 +330,7 @@ class TkBlackoutOverlay:
 
 def create_blackout_overlay(
     stop_event: threading.Event,
-    exit_key_combinations: ExitKeyCombinations,
+    exit_password: str,
 ) -> BlackoutOverlay | None:
     system = platform.system()
     is_x11 = os.environ.get("XDG_SESSION_TYPE") == "x11"
@@ -238,13 +338,13 @@ def create_blackout_overlay(
     if system == "Linux" and is_x11:
         return LinuxX11BlackoutOverlay(
             stop_event,
-            exit_key_combinations,
+            exit_password,
         )
 
     if system == "Windows":
         return TkBlackoutOverlay(
             stop_event,
-            exit_key_combinations,
+            exit_password,
         )
 
     return None
